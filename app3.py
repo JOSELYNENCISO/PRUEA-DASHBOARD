@@ -1,139 +1,106 @@
-import streamlit as st
-import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+from datetime import datetime
+import matplotlib.patches as patches
 
-st.title("Levantamiento de alturas")
+# ==========================================
+# ⚙️ CONFIGURACIÓN Y DATOS (Simulados)
+# ==========================================
+# (Asegúrate de tener tu dataframe 'df' cargado aquí)
+fecha_actual = datetime.now().strftime("%d/%m/%Y")
+turno = "DÍA"  # Esto puede venir de un selectbox de Streamlit
 
-archivo = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+conteo = df["Categoria"].value_counts()
+optimo = conteo.get("Óptimo", 0)
+corto = conteo.get("Corto", 0)
+critico = conteo.get("Crítico", 0)
+tapado = conteo.get("Tapado", 0)
+total = len(df)
+avance = (optimo / total) * 100 if total > 0 else 0
 
-if archivo is not None:
+# ==========================================
+# 🎨 DISEÑO DEL DASHBOARD
+# ==========================================
+plt.rcParams['font.family'] = 'sans-serif'
+fig = plt.figure(figsize=(16, 10), facecolor='#F4F4F4')
+gs = fig.add_gridspec(3, 4, hspace=0.4, wspace=0.3)
 
-    df = pd.read_excel(archivo)
+# 1. ENCABEZADO PERSONALIZADO
+ax_header = fig.add_subplot(gs[0, :])
+ax_header.axis('off')
+ax_header.text(0, 0.8, "ENAEX - SERVICIOS MINEROS", fontsize=14, color='#CC0000', fontweight='bold')
+ax_header.text(0, 0.4, f"REPORTE DE CARGUÍO DE TALADROS", fontsize=22, fontweight='black')
+ax_header.text(0.95, 0.4, f"FECHA: {fecha_actual}\nTURNO: {turno}", 
+               fontsize=12, ha='right', bbox=dict(facecolor='white', alpha=0.5))
 
-    # 🔥 LIMPIAR
-    df["Altura"] = pd.to_numeric(df["Altura"], errors='coerce')
+# 2. VELOCÍMETRO REAL (GAUGE CIRCULAR)
+ax_gauge = fig.add_subplot(gs[1, 0], projection='polar')
 
-    # 🔥 CLASIFICACIÓN
-    def clasificar(h):
-        if pd.isna(h):
-            return "Sin dato"
-        elif h >= 14:
-            return "Óptimo"
-        elif h >= 10:
-            return "Corto"
-        elif h >= 6:
-            return "Crítico"
-        else:
-            return "Tapado"
+# Configuración del arco
+theta = np.linspace(0, np.pi, 100)
+ax_gauge.fill_between(theta, 1, 1.3, color='lightgrey', alpha=0.3) # Fondo
+ax_gauge.fill_between(np.linspace(0, (avance/100)*np.pi, 100), 1, 1.3, color='#CC0000') # Progreso
 
-    df["Categoria"] = df["Altura"].apply(clasificar)
+# Aguja
+arrow_angle = (avance / 100) * np.pi
+ax_gauge.annotate('', xy=(arrow_angle, 1.3), xytext=(0, 0),
+                 arrowprops=dict(arrowstyle='wedge, tail_width=0.3', color='black'))
 
-    # 🔥 TAMAÑOS
-    n_puntos = len(df)
+ax_gauge.set_thetamin(0)
+ax_gauge.set_thetamax(180)
+ax_gauge.set_xticks([])
+ax_gauge.set_yticks([])
+ax_gauge.axis('off')
+ax_gauge.text(0.5, 0.1, f"{avance:.1f}%", transform=ax_gauge.transAxes, 
+             fontsize=20, fontweight='bold', ha='center')
+ax_gauge.set_title("AVANCE TOTAL", pad=-20, fontweight='bold')
 
-    if n_puntos > 150:
-        size_punto = 25
-        size_texto = 5
-    elif n_puntos > 80:
-        size_punto = 50
-        size_texto = 7
-    elif n_puntos > 40:
-        size_punto = 90   
-        size_texto = 10
-    else:
-        size_punto = 130   
-        size_texto = 12
+# 3. KPI BARRAS HORIZONTALES (ESTILO MODERNO)
+ax_bar = fig.add_subplot(gs[2, 0])
+categorias = ["Óptimos", "Cortos", "Críticos", "Tapados"]
+valores = [optimo, corto, critico, tapado]
+colores_bar = ["#2E7D32", "#FBC02D", "#EF6C00", "#C62828"]
 
-    # 🎨 COLORES
-    colores = {
-        "Óptimo": "green",
-        "Corto": "yellow",
-        "Crítico": "orange",
-        "Tapado": "red",
-        "Sin dato": "black"
-    }
+bars = ax_bar.barh(categorias, valores, color=colores_bar, height=0.6)
+ax_bar.bar_label(bars, padding=3, fontweight='bold')
+ax_bar.spines[['top', 'right', 'bottom']].set_visible(False)
+ax_bar.set_xticks([])
+ax_bar.invert_yaxis()
+ax_bar.set_title("RESUMEN DE ESTADOS", loc='left', fontweight='bold')
 
-    nombres = {
-        "Óptimo": "Óptimo (>=14 m)",
-        "Corto": "Corto (10–14 m)",
-        "Crítico": "Crítico (6–10 m)",
-        "Tapado": "Tapado (<6 m)",
-        "Sin dato": "Sin dato (-)"
-    }
+# 4. PLANO DE TALADROS (DERECHA)
+ax_scatter = fig.add_subplot(gs[1:, 1:])
+ax_scatter.set_facecolor('#FFFFFF')
 
-    # 🔥 SOLO UN BOTÓN (BIEN UBICADO)
-    if st.button("🔘 Generar gráfico"):
+colores_map = {
+    "Óptimo": "#2E7D32", 
+    "Corto": "#FBC02D", 
+    "Crítico": "#EF6C00", 
+    "Tapado": "#C62828"
+}
 
-        fig, ax = plt.subplots(figsize=(10,10))
+for cat, color in colores_map.items():
+    sub = df[df["Categoria"] == cat]
+    ax_scatter.scatter(sub["X"], sub["Y"], c=color, s=100, edgecolors='white', label=cat, zorder=3)
 
-        resumen = []
+# Cuadrícula y etiquetas
+ax_scatter.grid(True, linestyle='--', alpha=0.6, zorder=0)
+ax_scatter.set_aspect('equal')
+ax_scatter.legend(loc='upper right', title="Referencia")
 
-        for cat in colores:
-            sub = df[df["Categoria"] == cat]
-            cantidad = len(sub)
+# IDs con mejor visibilidad
+offset = (df["Y"].max() - df["Y"].min()) * 0.02
+for _, row in df.iterrows():
+    ax_scatter.text(row["X"], row["Y"] + offset, str(row["ID"]), 
+                    fontsize=7, ha='center', fontweight='bold')
 
-            resumen.append({
-                "Categoría": nombres[cat],
-                "Cantidad": cantidad
-            })
+ax_scatter.set_title("DISTRIBUCIÓN ESPACIAL DE MALLA", fontweight='bold', size=14)
 
-            ax.scatter(sub["X"], sub["Y"],
-                       c=colores[cat],
-                       s=size_punto)
+# ==========================================
+# 🚀 FINALIZACIÓN
+# ==========================================
+plt.tight_layout()
+st.pyplot(fig) # Si estás en Streamlit
 
-        # 🔤 IDs
-        offset = (df["Y"].max() - df["Y"].min()) * 0.008
-
-        for _, row in df.iterrows():
-            ax.text(row["X"], row["Y"] + offset,
-                    str(row["ID"]),
-                    fontsize=size_texto,
-                    ha='center',
-                    va='bottom',
-                    fontweight='bold')
-
-        ax.set_title("Plano de Taladros", fontsize=14, fontweight='bold')
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.grid(False)
-
-        margen = (df["X"].max() - df["X"].min()) * 0.05
-
-        ax.set_xlim(df["X"].min() - margen, df["X"].max() + margen)
-        ax.set_ylim(df["Y"].min() - margen, df["Y"].max() + margen)
-
-        ax.set_aspect('equal', adjustable='box')
-
-        st.pyplot(fig)
-
-        # =========================
-        # 📋 TABLA KPI
-        # =========================
-        st.subheader("📋 Resumen de Taladros")
-
-        resumen_df = pd.DataFrame(resumen)
-        st.dataframe(resumen_df, use_container_width=True)
-
-        # =========================
-        # 📊 GRÁFICO DE BARRAS
-        # =========================
-        st.subheader("📊 Distribución de Taladros")
-
-        fig_bar, ax_bar = plt.subplots()
-
-        ax_bar.bar(resumen_df["Categoría"], resumen_df["Cantidad"])
-
-        ax_bar.set_title("Taladros por Categoría")
-        ax_bar.set_ylabel("Cantidad")
-
-        plt.xticks(rotation=30)
-
-        st.pyplot(fig_bar)
-
-        # =========================
-        # 📥 DESCARGA
-        # =========================
-        fig.savefig("grafico.png", dpi=600, bbox_inches='tight')
-
-        with open("grafico.png", "rb") as file:
-            st.download_button("⬇️ Descargar imagen", file, "grafico_taladros.png")
+# Botón para descargar (Opcional)
+# fig.savefig("reporte_enaex.pdf", bbox_inches='tight')
