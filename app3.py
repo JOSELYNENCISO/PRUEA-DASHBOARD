@@ -1,145 +1,131 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import io
+import datetime
 
-# Configuración de página de Streamlit
-st.set_page_config(page_title="Enaex - Reporte de Turno", layout="wide")
+st.set_page_config(page_title="Dashboard de Taladros", layout="wide")
 
-# ==========================================
-# 🛠️ FUNCIONES DE DATOS
-# ==========================================
+# =========================
+# 🎨 HEADER CORPORATIVO
+# =========================
+col1, col2 = st.columns([1, 4])
 
-def cargar_datos_ejemplo():
-    """Genera datos ficticios para que el dashboard no aparezca vacío"""
-    data = {
-        "ID": range(1, 21),
-        "X": np.random.uniform(0, 100, 20),
-        "Y": np.random.uniform(0, 100, 20),
-        "Categoria": np.random.choice(["Óptimo", "Corto", "Crítico", "Tapado"], 20)
-    }
-    return pd.DataFrame(data)
+with col1:
+    logo = st.file_uploader("Sube tu logo", type=["png", "jpg", "jpeg"])
 
-# ==========================================
-# 📂 BARRA LATERAL (CONTROL)
-# ==========================================
-st.sidebar.header("Configuración del Reporte")
-uploaded_file = st.sidebar.file_uploader("Subir Excel/CSV de Perforación", type=["xlsx", "csv"])
-turno_seleccionado = st.sidebar.selectbox("Turno", ["DÍA", "NOCHE"])
-generar_pdf = st.sidebar.button("Generar Reporte PDF (Simulado)")
+with col2:
+    st.title("📊 Dashboard de Levantamiento de Alturas")
 
-# Lógica de carga
-if uploaded_file is not None:
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+project_name = st.text_input("Nombre del proyecto", "Proyecto Mina XYZ")
+fecha = st.date_input("Fecha del reporte", datetime.date.today())
+
+# =========================
+# 📂 ARCHIVO EXCEL
+# =========================
+archivo = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+
+if archivo is not None:
+
+    df = pd.read_excel(archivo)
+    df["Altura"] = pd.to_numeric(df["Altura"], errors='coerce')
+
+    # =========================
+    # 📌 CLASIFICACIÓN
+    # =========================
+    def clasificar(h):
+        if pd.isna(h):
+            return "Sin dato"
+        elif h >= 14:
+            return "Óptimo"
+        elif h >= 10:
+            return "Corto"
+        elif h >= 6:
+            return "Crítico"
         else:
-            df = pd.read_excel(uploaded_file)
-        st.sidebar.success("Archivo cargado correctamente")
-    except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
-        df = cargar_datos_ejemplo()
-else:
-    df = cargar_datos_ejemplo()
-    st.sidebar.info("Usando datos de ejemplo (Sube un archivo para actualizar)")
+            return "Tapado"
 
-# ==========================================
-# 📊 PROCESAMIENTO DE KPIs
-# ==========================================
-fecha_actual = datetime.now().strftime("%d/%m/%Y")
+    df["Categoria"] = df["Altura"].apply(clasificar)
 
-conteo = df["Categoria"].value_counts()
-optimo = conteo.get("Óptimo", 0)
-corto = conteo.get("Corto", 0)
-critico = conteo.get("Crítico", 0)
-tapado = conteo.get("Tapado", 0)
-total = len(df)
-avance = (optimo / total) * 100 if total > 0 else 0
+    colores = {
+        "Óptimo": "green",
+        "Corto": "yellow",
+        "Crítico": "orange",
+        "Tapado": "red",
+        "Sin dato": "black"
+    }
 
-# ==========================================
-# 🎨 CONSTRUCCIÓN DEL DASHBOARD (Matplotlib)
-# ==========================================
-plt.rcParams['font.family'] = 'sans-serif'
-fig = plt.figure(figsize=(16, 10), facecolor='#F8F9FA')
-gs = fig.add_gridspec(3, 4, hspace=0.4, wspace=0.3)
+    nombres = {
+        "Óptimo": "Óptimo (>=14 m)",
+        "Corto": "Corto (10–14 m)",
+        "Crítico": "Crítico (6–10 m)",
+        "Tapado": "Tapado (<6 m)",
+        "Sin dato": "Sin dato"
+    }
 
-# --- 1. ENCABEZADO CORPORATIVO ---
-ax_header = fig.add_subplot(gs[0, :])
-ax_header.axis('off')
-ax_header.text(0, 0.85, "ENAEX - SERVICIOS MINEROS", fontsize=14, color='#CC0000', fontweight='bold')
-ax_header.text(0, 0.45, "REPORTE OPERATIVO DE CARGUÍO", fontsize=26, fontweight='black')
-ax_header.text(0.95, 0.45, f"FECHA: {fecha_actual}\nTURNO: {turno_seleccionado}", 
-               fontsize=13, ha='right', bbox=dict(facecolor='white', edgecolor='#DDDDDD', boxstyle='round,pad=0.5'))
+    # =========================
+    # 📊 GRÁFICO
+    # =========================
+    fig, ax = plt.subplots(figsize=(10, 10))
 
-# --- 2. VELOCÍMETRO (GAUGE) ---
-ax_gauge = fig.add_subplot(gs[1, 0], projection='polar')
-theta = np.linspace(0, np.pi, 100)
-# Fondo gris
-ax_gauge.fill_between(theta, 1, 1.3, color='#EEEEEE')
-# Barra de progreso roja
-ax_gauge.fill_between(np.linspace(0, (avance/100)*np.pi, 100), 1, 1.3, color='#CC0000')
+    for cat in colores:
+        sub = df[df["Categoria"] == cat]
+        ax.scatter(sub["X"], sub["Y"],
+                   c=colores[cat],
+                   label=f"{nombres[cat]} ({len(sub)})",
+                   s=80)
 
-# Aguja
-arrow_angle = (avance / 100) * np.pi
-ax_gauge.annotate('', xy=(arrow_angle, 1.3), xytext=(0, 0),
-                 arrowprops=dict(arrowstyle='wedge, tail_width=0.4', color='#333333'))
+    for i, row in df.iterrows():
+        ax.text(row["X"], row["Y"], str(row["ID"]),
+                fontsize=8, ha='center')
 
-ax_gauge.set_thetamin(0)
-ax_gauge.set_thetamax(180)
-ax_gauge.axis('off')
-ax_gauge.text(0.5, 0.05, f"{avance:.1f}%", transform=ax_gauge.transAxes, 
-             fontsize=24, fontweight='bold', ha='center', color='#CC0000')
-ax_gauge.set_title("AVANCE DE CARGUÍO", pad=-10, fontweight='bold', fontsize=14)
+    ax.set_title("Plano de Taladros")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.legend()
+    ax.set_aspect('equal')
 
-# --- 3. RESUMEN ESTADOS (BARRAS) ---
-ax_bar = fig.add_subplot(gs[2, 0])
-categorias = ["Óptimo", "Corto", "Crítico", "Tapado"]
-valores = [optimo, corto, critico, tapado]
-colores_bar = ["#2E7D32", "#FBC02D", "#EF6C00", "#C62828"]
+    st.pyplot(fig)
 
-bars = ax_bar.barh(categorias, valores, color=colores_bar, height=0.7)
-ax_bar.bar_label(bars, padding=5, fontweight='bold', fontsize=11)
-ax_bar.spines[['top', 'right', 'bottom']].set_visible(False)
-ax_bar.set_xticks([])
-ax_bar.invert_yaxis()
-ax_bar.set_title("CANTIDAD POR ESTADO", loc='left', fontweight='bold', pad=15)
+    # =========================
+    # 🖼️ EXPORTAR DASHBOARD HD (JPG)
+    # =========================
+    if st.button("⬇️ Descargar Dashboard HD (JPG)"):
 
-# --- 4. PLANO DE MALLA (SCATTER) ---
-ax_scatter = fig.add_subplot(gs[1:, 1:])
-ax_scatter.set_facecolor('#FFFFFF')
+        # --- Crear imagen base ---
+        width, height = 1800, 1200
+        dashboard = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(dashboard)
 
-colores_map = {
-    "Óptimo": "#2E7D32", 
-    "Corto": "#FBC02D", 
-    "Crítico": "#EF6C00", 
-    "Tapado": "#C62828"
-}
+        # --- Logo ---
+        if logo is not None:
+            logo_img = Image.open(logo)
+            logo_img = logo_img.resize((200, 200))
+            dashboard.paste(logo_img, (50, 50))
 
-for cat, color in colores_map.items():
-    sub = df[df["Categoria"] == cat]
-    if not sub.empty:
-        ax_scatter.scatter(sub["X"], sub["Y"], c=color, s=150, 
-                           edgecolors='#333333', linewidth=0.8, label=cat, zorder=3)
+        # --- Texto superior ---
+        draw.text((300, 80), f"{project_name}", fill="black")
+        draw.text((300, 130), f"Fecha: {fecha}", fill="gray")
 
-# Etiquetas de ID
-offset = (df["Y"].max() - df["Y"].min()) * 0.02 if not df.empty else 1
-for _, row in df.iterrows():
-    ax_scatter.text(row["X"], row["Y"] + offset, str(row["ID"]), 
-                    fontsize=8, ha='center', fontweight='bold', alpha=0.7)
+        # --- Convertir gráfico a imagen ---
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+        buf.seek(0)
+        plot_img = Image.open(buf)
 
-ax_scatter.grid(True, linestyle='--', alpha=0.3, zorder=0)
-ax_scatter.set_aspect('equal')
-ax_scatter.legend(loc='upper right', title="Referencia de Estados", frameon=True, shadow=True)
-ax_scatter.set_title("PLANO DE MALLA DE PERFORACIÓN", fontweight='bold', size=16, pad=20)
-ax_scatter.set_xlabel("Coordenada Este (X)", fontsize=10)
-ax_scatter.set_ylabel("Coordenada Norte (Y)", fontsize=10)
+        plot_img = plot_img.resize((1200, 900))
 
-# ==========================================
-# 🚀 RENDERIZADO EN STREAMLIT
-# ==========================================
-st.pyplot(fig)
+        dashboard.paste(plot_img, (300, 250))
 
-# Tabla de datos opcional para revisión
-with st.expander("Ver tabla de datos completa"):
-    st.dataframe(df, use_container_width=True)
+        # --- Guardar HD ---
+        output = "dashboard_hd.jpg"
+        dashboard.save(output, "JPEG", quality=95)
+
+        with open(output, "rb") as file:
+            st.download_button(
+                "📥 Descargar JPG HD",
+                file,
+                file_name="dashboard_taladros_HD.jpg",
+                mime="image/jpeg"
+            )
