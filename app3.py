@@ -1,3 +1,20 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+st.title("Levantamiento de alturas")
+
+archivo = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+
+if archivo is not None:
+
+    df = pd.read_excel(archivo)
+
+    # TODO tu código aquí 👇
+    if st.button("🔘 Generar gráfico"):
+        # gráfico aquí
+
+
 if st.button("🔘 Generar gráfico"):
 
     fig, ax = plt.subplots(figsize=(10,10))
